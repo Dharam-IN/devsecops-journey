@@ -1,91 +1,199 @@
-# tcpdump basics
-tcpdump is a tool that watched (capture) all the network packets coming and going out of your system.
+# tcpdump
 
-# data - how tcpdump get data
-tcpdump is just show the live packets us by default with this command:-
+## What it is
+- Command-line packet capture tool. Captures packets flowing through a network interface and prints them as text.
+- Uses **libpcap** (the capture library) and **BPF** (Berkeley Packet Filter) for filtering — the *same* engine Wireshark uses.
+- Needs **root** (`sudo`) because it reads raw network traffic.
+
+## Essential flags
+| Flag | Meaning |
+|---|---|
+| `-i <iface>` | Which interface to capture on (`eth0`, `wlo1`, `any`) |
+| `-D` | List available interfaces |
+| `-w file.pcap` | Write raw packets to a file (for Wireshark later) |
+| `-r file.pcap` | Read packets back from a file |
+| `-n` | Don't resolve IPs to hostnames (faster, cleaner) |
+| `-nn` | Don't resolve IPs *or* port names |
+| `-c <N>` | Stop after N packets |
+| `-v` / `-vv` / `-vvv` | More verbose detail |
+| `-A` | Show packet payload as ASCII (readable text) |
+| `-X` | Show payload as hex + ASCII |
+| `-e` | Show Ethernet (link-layer) header too |
+| `-tttt` | Human-readable timestamps |
+
+## BPF filter syntax (capture filters)
+Built from three building blocks you combine:
+- **Type:** `host`, `net`, `port`, `portrange`
+- **Direction:** `src`, `dst` (omit = both)
+- **Protocol:** `tcp`, `udp`, `icmp`, `ip`, `ip6`, `arp`
+- **Combine with:** `and` / `or` / `not`
+
+Examples:
+```bash
+tcpdump -i eth0 host 192.168.1.1          # to/from this IP
+tcpdump -i eth0 dst port 80               # only traffic going to port 80
+tcpdump -i eth0 tcp port 443              # HTTPS
+tcpdump -i eth0 net 192.168.1.0/24        # a whole subnet
+tcpdump -i eth0 'port 80 or port 443'     # web traffic
+tcpdump -i eth0 'not port 22'             # exclude SSH (see note)
 ```
-sudo tcpdump -i any
+- ⚠️ **Always exclude your SSH session** when capturing on a remote server (`not port 22`), or you create a feedback loop — your capture generates traffic that you then capture.
+- Quote the filter (`'...'`) when it contains spaces or special characters.
+
+## Reading the output
+A typical TCP line:
 ```
-Output comes something like this:-
-
+12:34:56.789 IP 192.168.1.10.50432 > 93.184.216.34.80: Flags [S], seq 12345, win 64240, length 0
 ```
-ubuntu@ip-172-31-44-194:~$ sudo tcpdump -i any
-tcpdump: WARNING: any: That device doesn't support promiscuous mode
-(Promiscuous mode not supported on the "any" device)
-tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
-listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes
-12:13:44.026162 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 1383527623:1383527787, ack 4085729077, win 464, options [nop,nop,TS val 484689912 ecr 1847987450], length 164
-12:13:44.029372 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 164:368, ack 1, win 464, options [nop,nop,TS val 484689916 ecr 1847987450], length 204
-12:13:44.124798 lo    In  IP localhost.35246 > _localdnsstub.domain: 51744+ [1au] PTR? 123.68.208.103.in-addr.arpa. (56)
-12:13:44.125030 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.41658 > ip-172-31-0-2.eu-north-1.compute.internal.domain: 2732+ [1au] PTR? 123.68.208.103.in-addr.arpa. (56)
-12:13:44.130312 ens5  In  IP ip-172-31-0-2.eu-north-1.compute.internal.domain > ip-172-31-44-194.eu-north-1.compute.internal.41658: 2732 NXDomain 0/1/1 (144)
-12:13:44.130569 lo    In  IP _localdnsstub.domain > localhost.35246: 51744 NXDomain 0/1/1 (144)
-12:13:44.130727 lo    In  IP localhost.40590 > _localdnsstub.domain: 44812+ [1au] PTR? 194.44.31.172.in-addr.arpa. (55)
-12:13:44.130881 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.33284 > ip-172-31-0-2.eu-north-1.compute.internal.domain: 4969+ [1au] PTR? 194.44.31.172.in-addr.arpa. (55)
-12:13:44.131746 ens5  In  IP ip-172-31-0-2.eu-north-1.compute.internal.domain > ip-172-31-44-194.eu-north-1.compute.internal.33284: 4969 1/0/1 PTR ip-172-31-44-194.eu-north-1.compute.internal. (113)
-12:13:44.131856 lo    In  IP _localdnsstub.domain > localhost.40590: 44812 1/0/1 PTR ip-172-31-44-194.eu-north-1.compute.internal. (113)
-12:13:44.132093 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 368:844, ack 1, win 464, options [nop,nop,TS val 484690018 ecr 1847987450], length 476
-12:13:44.160182 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 4294966984, win 471, options [nop,nop,TS val 1847987665 ecr 484689831], length 0
-12:13:44.160183 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 4294967028, win 471, options [nop,nop,TS val 1847987665 ecr 484689831], length 0
-12:13:44.164151 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 0, win 469, options [nop,nop,TS val 1847987671 ecr 484689837], length 0
-12:13:44.224085 lo    In  IP localhost.59694 > _localdnsstub.domain: 31567+ [1au] PTR? 53.0.0.127.in-addr.arpa. (52)
-12:13:44.224341 lo    In  IP _localdnsstub.domain > localhost.59694: 31567*$ 1/0/1 PTR _localdnsstub. (79)
-12:13:44.226937 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 844:1000, ack 1, win 464, options [nop,nop,TS val 484690113 ecr 1847987671], length 156
-12:13:44.226963 lo    In  IP localhost.47710 > _localdnsstub.domain: 41199+ [1au] PTR? 2.0.31.172.in-addr.arpa. (52)
-12:13:44.227149 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.39455 > ip-172-31-0-2.eu-north-1.compute.internal.domain: 14990+ [1au] PTR? 2.0.31.172.in-addr.arpa. (52)
-12:13:44.227765 ens5  In  IP ip-172-31-0-2.eu-north-1.compute.internal.domain > ip-172-31-44-194.eu-north-1.compute.internal.39455: 14990 1/0/1 PTR ip-172-31-0-2.eu-north-1.compute.internal. (107)
-12:13:44.227880 lo    In  IP _localdnsstub.domain > localhost.47710: 41199 1/0/1 PTR ip-172-31-0-2.eu-north-1.compute.internal. (107)
-12:13:44.228309 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [.], seq 1000:2400, ack 1, win 464, options [nop,nop,TS val 484690115 ecr 1847987671], length 1400
-12:13:44.228312 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 2400:2916, ack 1, win 464, options [nop,nop,TS val 484690115 ecr 1847987671], length 516
-12:13:44.240066 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 164, win 468, options [nop,nop,TS val 1847987746 ecr 484689912], length 0
-12:13:44.244057 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 368, win 467, options [nop,nop,TS val 1847987749 ecr 484689916], length 0
-12:13:44.324339 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 2916:3880, ack 1, win 464, options [nop,nop,TS val 484690211 ecr 1847987749], length 964
-12:13:44.324382 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 3880:4888, ack 1, win 464, options [nop,nop,TS val 484690211 ecr 1847987749], length 1008
-12:13:44.364531 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 844, win 464, options [nop,nop,TS val 1847987873 ecr 484690018], length 0
-12:13:44.424261 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 4888:5532, ack 1, win 464, options [nop,nop,TS val 484690311 ecr 1847987873], length 644
-12:13:44.440682 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 1000, win 463, options [nop,nop,TS val 1847987947 ecr 484690113], length 0
-12:13:44.440682 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 2916, win 449, options [nop,nop,TS val 1847987948 ecr 484690115], length 0
-12:13:44.524250 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 5532:6160, ack 1, win 464, options [nop,nop,TS val 484690411 ecr 1847987948], length 628
-12:13:44.540844 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 3880, win 442, options [nop,nop,TS val 1847988045 ecr 484690211], length 0
-12:13:44.540844 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 4888, win 435, options [nop,nop,TS val 1847988045 ecr 484690211], length 0
-12:13:44.624237 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 6160:6788, ack 1, win 464, options [nop,nop,TS val 484690511 ecr 1847988045], length 628
-12:13:44.637812 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 5532, win 430, options [nop,nop,TS val 1847988145 ecr 484690311], length 0
-12:13:44.724164 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 6788:7224, ack 1, win 464, options [nop,nop,TS val 484690610 ecr 1847988145], length 436
-12:13:44.738141 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 6160, win 426, options [nop,nop,TS val 1847988244 ecr 484690411], length 0
-12:13:44.824136 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 7224:7660, ack 1, win 464, options [nop,nop,TS val 484690710 ecr 1847988244], length 436
-12:13:44.837838 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 6788, win 422, options [nop,nop,TS val 1847988345 ecr 484690511], length 0
-12:13:44.924217 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 7660:8096, ack 1, win 464, options [nop,nop,TS val 484690811 ecr 1847988345], length 436
-12:13:44.938482 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 7224, win 419, options [nop,nop,TS val 1847988444 ecr 484690610], length 0
-12:13:45.024273 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 8096:8532, ack 1, win 464, options [nop,nop,TS val 484690911 ecr 1847988444], length 436
-12:13:45.039252 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 7660, win 416, options [nop,nop,TS val 1847988545 ecr 484690710], length 0
-12:13:45.124291 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 8532:8968, ack 1, win 464, options [nop,nop,TS val 484691011 ecr 1847988545], length 436
-12:13:45.138882 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 8096, win 413, options [nop,nop,TS val 1847988644 ecr 484690811], length 0
-12:13:45.224248 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 8968:9404, ack 1, win 464, options [nop,nop,TS val 484691111 ecr 1847988644], length 436
-12:13:45.238802 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 8532, win 410, options [nop,nop,TS val 1847988744 ecr 484690911], length 0
-12:13:45.324206 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 9404:9840, ack 1, win 464, options [nop,nop,TS val 484691210 ecr 1847988744], length 436
-12:13:45.338836 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 8968, win 407, options [nop,nop,TS val 1847988844 ecr 484691011], length 0
-12:13:45.424261 ens5  Out IP ip-172-31-44-194.eu-north-1.compute.internal.ssh > 103.208.68.123.45898: Flags [P.], seq 9840:10276, ack 1, win 464, options [nop,nop,TS val 484691311 ecr 1847988844], length 436
-12:13:45.442935 ens5  In  IP 103.208.68.123.45898 > ip-172-31-44-194.eu-north-1.compute.internal.ssh: Flags [.], ack 9404, win 404, options [nop,nop,TS val 1847988945 ecr 484691111], length 0
-^C
-52 packets captured
-63 packets received by filter
-0 packets dropped by kernel
-ubuntu@ip-172-31-44-194:~$ 
+Read it as: `time  src_ip.src_port > dst_ip.dst_port: flags, ...`
 
+**TCP flag codes** (the important part):
+| Code | Flag | Meaning |
+|---|---|---|
+| `[S]` | SYN | Start a connection |
+| `[S.]` | SYN-ACK | Server agrees |
+| `[.]` | ACK | Acknowledgement (the `.` = ACK bit) |
+| `[P.]` | PSH-ACK | Carries actual data |
+| `[F.]` | FIN | Closing connection |
+| `[R]` | RST | Connection reset (rejected/killed) |
+
+- **TCP 3-way handshake** = `[S]` → `[S.]` → `[.]`. You'll see this at the start of every TCP connection. Memorise it.
+
+## HTTP capture
+```bash
+tcpdump -i eth0 -A -s0 'tcp port 80'
+```
+- `-A` shows the text, so you can read `GET / HTTP/1.1`, `Host:`, headers, etc.
+- Only works for plain HTTP (port 80). HTTPS is encrypted — you'd see nothing readable.
+
+## DNS capture
+```bash
+tcpdump -i eth0 -n port 53
+```
+- DNS runs on **UDP port 53**.
+- You'll see queries (`A? google.com`) and responses (the IPs returned).
+- `-n` is important here or the output gets cluttered with reverse lookups.
+
+---
+
+# Wireshark
+
+## What it is (and how it relates to yesterday)
+- **GUI version of tcpdump, with a protocol decoder.** Same libpcap capture engine, same BPF capture filters.
+- The difference: instead of raw text, it **reassembles** packets and lets you click through each one layer by layer, and decodes 3000+ protocols.
+- Mental model: **tcpdump captures, Wireshark analyses.** They're a team — capture on a server with tcpdump, open the file in Wireshark.
+
+## Installation (Ubuntu/Debian)
+```bash
+sudo apt install wireshark
+```
+- Installer asks *"Should non-superusers be able to capture packets?"* → **Yes**
+- Add yourself to the capture group so you don't need root every time:
+```bash
+sudo usermod -aG wireshark $USER
+```
+- **Log out and back in** (group changes don't apply until you do). Verify with `groups`.
+
+## The GUI — 3 panes
+1. **Packet List** (top) — one row per packet: No., Time, Source, Destination, Protocol, Length, Info. Color-coded by protocol.
+2. **Packet Details** (middle) — the protocol tree for the selected packet, layer by layer:
+   `Frame → Ethernet → IP → TCP → HTTP/TLS`
+   Click the arrows to expand each layer. *This is what tcpdump couldn't show nicely.*
+3. **Packet Bytes** (bottom) — the raw hex + ASCII.
+
+**Menus worth knowing:**
+- **Capture** → pick interface, start/stop
+- **Statistics** → analysis tools (see below)
+- **Analyze** → Follow streams, filter expressions
+
+## Capture vs Display filters — THE key concept
+This trips up every beginner. They do different jobs **and use different syntax.**
+
+| | Capture filter | Display filter |
+|---|---|---|
+| **When** | *Before* capturing | *After* — filters the view |
+| **Syntax** | **BPF** (tcpdump syntax) | **Wireshark's own syntax** |
+| **Effect** | Discards non-matching **permanently** | Only **hides** — data still there, reversible |
+| **Where** | Green bar on welcome screen | Main filter bar (top) |
+| **Example** | `tcp port 443` | `tcp.port == 443` |
+
+- **Rule of thumb:** capture everything, filter the display. Only use capture filters when traffic volume is huge (you don't want a 10 GB file). You can never recover packets you chose not to capture.
+- Note the syntax difference: capture filter uses `tcp port 443` (spaces), display filter uses `tcp.port == 443` (dots and `==`).
+
+## Display filter syntax
+- **Operators:** `==` `!=` `>` `<` `>=` `<=`
+- **Logic:** `and` / `or` / `not` (or `&&` `||` `!`)
+- **Just type a protocol name** to see only that: `http`, `dns`, `tls`, `tcp`, `icmp`, `arp`, `dhcp`
+- **Special operators:** `contains` (substring), `matches` (regex)
+
+Common field filters:
+```
+ip.addr == 192.168.1.1                      # any packet to/from this IP
+ip.src == 10.0.0.5                          # from this IP only
+tcp.port == 80                              # this port
+http.request.method == "GET"                # only GET requests
+http.response.code == 404                   # only 404 errors
+dns.qry.name contains "google"              # DNS lookups for google
+tcp.flags.syn == 1 and tcp.flags.ack == 0   # connection starts (SYN only)
+tcp.analysis.retransmission                 # find retransmitted packets
+frame.len > 1000                            # large packets
+!(arp or dns)                               # hide ARP/DNS noise
 ```
 
+## Follow streams
+- Right-click any packet → **Follow → TCP Stream** (or HTTP / TLS / UDP)
+- Reassembles the **entire conversation** into one readable view:
+  - Client → server data in one color
+  - Server → client data in another
+- Auto-applies a filter like `tcp.stream eq 0` so you're now seeing only that one conversation.
+- **To get back to everything:** clear the filter bar.
+- This is how you read a full HTTP request + response instead of clicking packet-by-packet.
 
-
-this is live data that show on the screen but if we want to save this data to any file we can use this command.
-
+## Analyzing a .pcap file
+The real workflow that connects to yesterday:
+```bash
+# On a headless server (no GUI):
+sudo tcpdump -i eth0 -w capture.pcap
+# Ctrl+C to stop, copy file to your machine, then:
 ```
-sudo tcpdump -i any -w mycapture.pcap
+In Wireshark: **File → Open → capture.pcap**
+- Practice files: search "**Wireshark sample captures**" — the official wiki has real ones (DNS, HTTP, malware traffic, etc.).
+
+## Statistics menu (where the real analysis happens)
+Don't just scroll packets — use these:
+- **Protocol Hierarchy** — what protocols are in the capture and their % breakdown
+- **Conversations** — who talked to whom, how many bytes/packets
+- **Endpoints** — every host in the capture
+- **Expert Information** — Wireshark auto-flags retransmissions, resets, errors, warnings for you
+- **I/O Graph** — traffic volume over time
+
+## Inspecting HTTPS
+- **HTTPS = HTTP inside TLS = encrypted.** Filter with `tls`.
+- **What you CAN see (unencrypted):** the **TLS handshake** —
+  - **Client Hello** — includes **SNI** (the domain you're visiting), supported cipher suites
+  - **Server Hello** — chosen cipher, TLS version
+  - **Certificate** — the server's cert
+  - Filter: `tls.handshake` or `tls.handshake.type == 1` (Client Hello only)
+- **What you CAN'T see:** the actual content — it's `Application Data` = encrypted gibberish. **This is correct, not broken.**
+- **The lesson = the contrast:** your neverssl.com stream was fully readable (HTTP). An HTTPS stream is encrypted. You can see *who* you talked to and *that* it happened — never *what* was said.
+
+**Decrypting your own HTTPS (optional, advanced):**
+```bash
+export SSLKEYLOGFILE=~/sslkeys.log
+# launch Chrome/Firefox from THIS terminal
 ```
+Then Wireshark → **Edit → Preferences → Protocols → TLS → "(Pre)-Master-Secret log filename"** → point to that file. Now your own HTTPS decrypts.
+- ⚠️ Only works for **your own** browser traffic (you're the client, you have the keys). You **cannot** passively decrypt someone else's HTTPS off the network — that's the entire point of TLS.
 
-for read the data.
+---
 
-```
-tcpdump -r mycapture.pcap
-```
+## 🔑 Quick reference: tcpdump vs Wireshark
+| | tcpdump | Wireshark |
+|---|---|---|
+| Interface | Terminal | GUI |
+| Best for | Quick capture, servers, no GUI | Deep analysis, reading streams |
+| Filter syntax | BPF | BPF (capture) + own syntax (display) |
+| Save format | `.pcap` | opens the same `.pcap` |
+| Typical use | Capture on remote box | Analyse the captured file |
 
-
+**Bottom line:** capture with tcpdump on servers → analyse in Wireshark. Same packets, two tools.
